@@ -5,7 +5,13 @@ cat: guide
 sidebar: reference_api
 ---
 
-p. The update API allows to update a document based on a script provided. The operation gets the document (collocated with the shard) from the index, runs the script (with optional script language and parameters), and index back the result (also allows to delete, or ignore the operation). It uses versioning to make sure no updates have happened during the "get" and "reindex". (available from @0.19@ onwards).
+p. The update API allows to update a document using a script or update "doc" containing the updated fields. The update operation performs the following steps:
+
+* gets the document (collocated with the shard) from the index
+* if a document was found it updates the document using the script (with optional script language and parameters) or the update "doc" if a script is not provided.  When no document is found and an upsert document is specified, the upsert will used.
+* index back the resulting document (if using a script, it also allows to delete, or ignore the operation)
+
+p. The update operation uses versioning to make sure no updates have happened during the "get" and "reindex". (available from @0.19@ onwards).
 
 p. Note, this operation still means full reindex of the document, it just removes some network roundtrips and reduces chances of version conflicts between the get and the index.
 
@@ -14,7 +20,10 @@ p. For example, lets index a simple doc:
 <pre class="prettyprint">
 curl -XPUT localhost:9200/test/type1/1 -d '{
     "counter" : 1,
-    "tags" : ["red"]
+    "tags" : ["red"],
+    "name" : {
+        "first" : "Shay"
+    }
 }'
 </pre>
 
@@ -48,6 +57,26 @@ curl -XPOST 'localhost:9200/test/type1/1/_update' -d '{
 }'
 </pre>
 
+p. We can add the same new field using the update "doc":
+
+<pre class="prettyprint">
+curl -XPOST 'localhost:9200/test/type1/1/_update' -d '{
+    "doc" : { "text" : "some text" }
+}'
+</pre>
+
+p. Object fields are updated recursively when using the update "doc" (_after this update, name.first=Shay and name.last=Banon_):
+
+<pre class="prettyprint">
+curl -XPOST 'localhost:9200/test/type1/1/_update' -d '{
+    "doc" : {
+        "name" : {
+            "last" : "Banon"
+        }
+    }
+}'
+</pre>
+
 p. We can also remove a field from the document:
 
 <pre class="prettyprint">
@@ -67,6 +96,20 @@ curl -XPOST 'localhost:9200/test/type1/1/_update' -d '{
 }'
 </pre>
 
+p. If we try to update a document that does not exist and specify an upsert document, the upsert document will be indexed.
+
+<pre class="prettyprint">
+curl -XPOST 'localhost:9200/test/type1/2/_update' -d '{
+    "script" : "ctx._source.counter += count",
+    "params" : {
+        "count" : 4
+    },
+    "upsert" : {
+        "counter" : 1
+    }
+}'
+</pre>
+
 p. The update operation supports similar parameters as the index API, including:
 
 * @routing@: Sets the routing that will be used to route the document to the relevant shard.
@@ -76,6 +119,7 @@ p. The update operation supports similar parameters as the index API, including:
 * @consistency@: The write consistency of the index/delete operation.
 * @percolate@: Enables percolation and filters out which percolator queries will be executed.
 * @refresh@: Refresh the index immediately after the operation occurs, so that the updated document appears in search results immediately.
+* @ttl@: The @ttl@ for the upsert or update "doc".
 
 p. And also support @retry_on_conflict@ which controls how many times to retry if there is a version conflict between getting the document and indexing / deleting it. Defaults to @0@.
 
